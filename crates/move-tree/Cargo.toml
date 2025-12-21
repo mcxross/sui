@@ -1,0 +1,18 @@
+[package]
+name = "move-tree"
+version.workspace = true
+authors = ["Mysten Labs <build@mystenlabs.com>"]
+license = "Apache-2.0"
+publish = false
+edition = "2024"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+colored.workspace = true
+move-binary-format.workspace = true
+move-package-alt.workspace = true
+move-package-alt-compilation.workspace = true
+sui-package-alt.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+walkdir.workspace = true

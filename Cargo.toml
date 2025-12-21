@@ -89,6 +89,7 @@ members = [
   "crates/mysten-metrics",
   "crates/mysten-network",
   "crates/mysten-service",
+  "crates/move-tree",
   "crates/prometheus-closure-metric",
   "crates/shared-crypto",
   "crates/simulacrum",

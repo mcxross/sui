@@ -8618,6 +8618,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "move-tree"
+version = "1.63.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "colored",
+ "move-binary-format",
+ "move-package-alt",
+ "move-package-alt-compilation",
+ "sui-package-alt",
+ "tokio",
+ "walkdir",
+]
+
+[[package]]
 name = "move-unit-test"
 version = "0.1.0"
 dependencies = [
