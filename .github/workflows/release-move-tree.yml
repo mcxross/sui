@@ -1,0 +1,42 @@
+name: Release move-tree
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+          - os: macos-15
+            target: aarch64-apple-darwin
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Add target
+        run: rustup target add ${{ matrix.target }}
+      - name: Build move-tree
+        run: cargo build -p move-tree --release --target ${{ matrix.target }}
+      - name: Package
+        run: |
+          VERSION="${{ github.ref_name }}"
+          ARCHIVE="move-tree-${VERSION}-${{ matrix.target }}.tar.gz"
+          tar -czf "$ARCHIVE" -C "target/${{ matrix.target }}/release" move-tree
+          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+      - name: Upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ARCHIVE }}
