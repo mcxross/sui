@@ -9,6 +9,16 @@
 
 [Sui](https://sui.io) is a next-generation smart contract platform with high throughput, low latency, and an asset-oriented programming model powered by the [Move programming language](https://github.com/MystenLabs/awesome-move).
 
+## Install move-tree
+
+```bash
+cargo install --git https://github.com/mcxross/sui.git --tag v0.1.0 --package move-tree --bin move-tree
+```
+
+```bash
+brew install mcxross/tap/move-tree
+```
+
 ## Sui Highlights
 
 Sui offers the following benefits and capabilities:

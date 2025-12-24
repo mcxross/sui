@@ -13,10 +13,13 @@ use sui_package_alt::SuiFlavor;
 use walkdir::{DirEntry, WalkDir};
 
 #[derive(Parser, Debug)]
-#[command(about = "Render a tree of Move modules and public function signatures")]
+#[command(about = "Render a tree of Move modules or a dependency graph")]
 struct Args {
     /// Path to a Move package directory (or a folder containing Move packages)
     path: PathBuf,
+    /// Render the dependency graph instead of the module tree
+    #[arg(long)]
+    deps: bool,
     /// Disable ANSI colors
     #[arg(long)]
     no_color: bool,
@@ -49,18 +52,24 @@ async fn main() -> Result<()> {
 
     let mut first = true;
     for root in package_roots {
-        let compiled = compile_package(&root)
-            .await
-            .with_context(|| format!("Failed to compile Move package at {}", root.display()))?;
-        let modules = collect_modules(&compiled);
-        let package_name = compiled.compiled_package_info.package_name.as_str().to_string();
-
         if !first {
             println!();
         }
         first = false;
 
-        print_package_tree(&args.path, &root, &package_name, &modules);
+        if args.deps {
+            let root_package = load_dependency_graph(&root)
+                .await
+                .with_context(|| format!("Failed to load dependency graph at {}", root.display()))?;
+            print_dependency_graph(&args.path, &root, &root_package);
+        } else {
+            let compiled = compile_package(&root)
+                .await
+                .with_context(|| format!("Failed to compile Move package at {}", root.display()))?;
+            let modules = collect_modules(&compiled);
+            let package_name = compiled.compiled_package_info.package_name.as_str().to_string();
+            print_package_tree(&args.path, &root, &package_name, &modules);
+        }
     }
 
     Ok(())
@@ -140,6 +149,42 @@ async fn compile_package(path: &Path) -> Result<CompiledPackage> {
     } else {
         Err(anyhow!(
             "no environments available to compile package at {}",
+            path.display()
+        ))
+    }
+}
+
+async fn load_dependency_graph(path: &Path) -> Result<RootPackage<SuiFlavor>> {
+    let build_config = BuildConfig::default();
+    let modes = build_config
+        .modes
+        .iter()
+        .map(|mode| mode.to_string())
+        .collect::<Vec<_>>();
+    let envs = RootPackage::<SuiFlavor>::environments(path)
+        .with_context(|| format!("Failed to read environments for {}", path.display()))?;
+
+    let mut last_error = None;
+
+    for (name, id) in envs {
+        let env = Environment::new(name.clone(), id.clone());
+        match RootPackage::<SuiFlavor>::load(path, env, modes.clone()).await {
+            Ok(root_package) => return Ok(root_package),
+            Err(err) => {
+                last_error = Some((name, err));
+            }
+        }
+    }
+
+    if let Some((name, err)) = last_error {
+        Err(anyhow!(
+            "unable to load dependency graph for any environment; last attempt with `{}` failed: {}",
+            name,
+            err
+        ))
+    } else {
+        Err(anyhow!(
+            "no environments available to load dependency graph at {}",
             path.display()
         ))
     }
@@ -289,6 +334,97 @@ fn print_package_tree(root: &Path, package_path: &Path, name: &str, modules: &[M
             println!("{}", line);
         }
     }
+}
+
+fn print_dependency_graph(root: &Path, package_path: &Path, package: &RootPackage<SuiFlavor>) {
+    let package_label = "deps".bold().blue();
+    let package_name = package.display_name().bold();
+    let mut line = format!("{} {}", package_label, package_name);
+
+    if let Ok(relative) = package_path.strip_prefix(root) {
+        if !relative.as_os_str().is_empty() {
+            line.push(' ');
+            line.push_str(&format!("({})", relative.display()).dimmed().to_string());
+        }
+    }
+
+    println!("{}", line);
+
+    let root_info = package.package_info();
+    let mut visited = BTreeSet::new();
+    visited.insert(root_info.id().to_string());
+
+    if root_info.direct_deps().is_empty() {
+        println!("`-- {}", "(no dependencies)".dimmed());
+        return;
+    }
+
+    print_dependency_tree(root_info, "", &mut visited);
+}
+
+fn print_dependency_tree(
+    package: move_package_alt::graph::PackageInfo<'_, SuiFlavor>,
+    prefix: &str,
+    visited: &mut BTreeSet<String>,
+) {
+    let mut deps = package
+        .direct_deps()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let deps_len = deps.len();
+
+    deps.sort_by(|(left_name, left_info), (right_name, right_info)| {
+        left_name
+            .as_str()
+            .cmp(right_name.as_str())
+            .then_with(|| left_info.id().cmp(right_info.id()))
+    });
+
+    for (index, (dep_name, dep_info)) in deps.into_iter().enumerate() {
+        let is_last = index + 1 == deps_len;
+        let branch = if is_last { "`-- " } else { "|-- " };
+        let child_prefix = if is_last { "    " } else { "|   " };
+        let dep_id = dep_info.id().to_string();
+        let already_seen = !visited.insert(dep_id);
+        let label = render_dependency_label(&dep_name, &dep_info);
+        let mut line = format!(
+            "{}{}{} {}",
+            prefix,
+            branch,
+            "dep".cyan().bold(),
+            label.cyan()
+        );
+
+        if already_seen {
+            line.push_str(&format!(" {}", "(shared)".dimmed()));
+        }
+
+        println!("{}", line);
+
+        if !already_seen {
+            let next_prefix = format!("{}{}", prefix, child_prefix);
+            print_dependency_tree(dep_info, &next_prefix, visited);
+        }
+    }
+}
+
+fn render_dependency_label(
+    dep_name: &move_package_alt::schema::PackageName,
+    package: &move_package_alt::graph::PackageInfo<'_, SuiFlavor>,
+) -> String {
+    let display_name = package.display_name();
+    let dep_name_str = dep_name.as_str();
+    let mut label = display_name.to_string();
+
+    if dep_name_str != display_name {
+        label.push_str(&format!(" ({})", dep_name_str));
+    }
+
+    if package.id().as_str() != display_name {
+        label.push_str(&format!(" [{}]", package.id()));
+    }
+
+    label
 }
 
 fn render_function(function: &FunctionInfo) -> String {

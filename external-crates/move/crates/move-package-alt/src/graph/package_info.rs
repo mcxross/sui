@@ -140,7 +140,7 @@ impl<'graph, F: MoveFlavor> PackageInfo<'graph, F> {
     }
 
     /// Return the package information for the direct dependencies of this package
-    pub(crate) fn direct_deps(&self) -> BTreeMap<PackageName, PackageInfo<'graph, F>> {
+    pub fn direct_deps(&self) -> BTreeMap<PackageName, PackageInfo<'graph, F>> {
         self.graph
             .inner
             .edges(self.node)
